@@ -1,7 +1,3 @@
-// Package hoarderbot implements a Telegram bot that allows users to create
-// bookmarks through messages. The bot interacts with the Hoarder API to manage
-// bookmarks and handles incoming messages by checking if the chat ID is
-// allowed, creating bookmarks, and sending back updated messages with tags.
 package hoarderbot
 
 import (
@@ -53,12 +49,46 @@ func (hb *HoarderBot) Run() error {
 	defer cancel()
 
 	// Set default handler
+	hb.telegram.RegisterHandlerMatchFunc(func(update *TelegramUpdate) bool {
+		return update.Message != nil && update.Message.Text == "/start"
+	}, hb.startHandler)
+
 	hb.telegram.RegisterHandlerMatchFunc(func(*TelegramUpdate) bool { return true }, hb.handler)
 
 	// Start the bot
 	hb.telegram.Start(ctx)
 
 	return nil
+}
+
+// startHandler handles the /start command.
+func (hb HoarderBot) startHandler(ctx context.Context, _ *Bot, update *TelegramUpdate) {
+	if update.Message == nil {
+		return
+	}
+
+	msg := TelegramMessage(*update.Message)
+
+	// Log user ID and handle if available
+	hb.logger.Info("Received /start command", msg.Attrs()...)
+
+	// Check if the user is listed in the allowlist
+	if !hb.isChatIdAllowed(msg.Chat.ID) {
+		hb.logger.Warn("User not in allowlist, ignoring /start command", msg.Attrs()...)
+		return
+	}
+
+	// Provide detailed information about the bot
+	detailedInfo := "Welcome to HoarderBot! This bot allows you to create bookmarks through messages. You can send links or text, and the bot will save them as bookmarks."
+	msg.Text = detailedInfo
+
+	// Send detailed information to the user
+	if err := hb.telegram.SendNewMessage(ctx, &msg); err != nil {
+		hb.logger.Error("Failed to send detailed information", msg.AttrsWithError(err)...)
+		return
+	}
+
+	hb.logger.Info("Sent detailed information to user", msg.Attrs()...)
 }
 
 // handler is the main handler for incoming messages. It processes the message
